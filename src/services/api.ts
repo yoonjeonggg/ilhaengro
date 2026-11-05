@@ -1,4 +1,4 @@
-import type { MissionPlan, SuggestedTask, SupplyItem, TaskStatus } from "../types";
+import type { MissionPlan, SuggestedTask, SupplyItem, TaskStatus, TaskUpdate } from "../types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -33,5 +33,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export const createSession = () => request<{ sessionId: string }>("/api/sessions", { method: "POST", body: "{}" });
 export const discover = (sessionId: string, message: string) => request<{ tasks: SuggestedTask[]; supplies: SupplyItem[] }>(`/api/sessions/${sessionId}/discover`, { method: "POST", body: JSON.stringify({ message }) });
 export const createPlan = (sessionId: string, tasks: SuggestedTask[], supplies: SupplyItem[], returnDeadline: string) => request<MissionPlan>(`/api/sessions/${sessionId}/plan`, { method: "POST", body: JSON.stringify({ tasks, supplies, returnDeadline }) });
-export const updateTask = (sessionId: string, taskId: string, status: TaskStatus) => request<{ taskId: string; status: TaskStatus }>(`/api/sessions/${sessionId}/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status }) });
+export const updateTask = (sessionId: string, taskId: string, update: TaskUpdate) => request<{ taskId: string; status: TaskStatus }>(`/api/sessions/${sessionId}/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(update) });
+export const addTask = (sessionId: string, task: SuggestedTask) => request<MissionPlan>(`/api/sessions/${sessionId}/tasks`, { method: "POST", body: JSON.stringify(task) });
+export const reorderTasks = (sessionId: string, taskIds: string[]) => request<MissionPlan>(`/api/sessions/${sessionId}/tasks/reorder`, { method: "POST", body: JSON.stringify({ taskIds }) });
+export const carryOver = (sessionId: string, taskIds: string[]) => request<{ sessionId: string; taskIds: string[]; plan: MissionPlan }>(`/api/sessions/${sessionId}/carry-over`, { method: "POST", body: JSON.stringify({ taskIds }) });
 export const replan = (sessionId: string, message: string) => request<{ previousPlan: MissionPlan; updatedPlan: MissionPlan; movedTasks: string[]; warnings: string[] }>(`/api/sessions/${sessionId}/replan`, { method: "POST", body: JSON.stringify({ message }) });

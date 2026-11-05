@@ -3,4 +3,7 @@
     <Project Path="src/Ilhaengro.Api/Ilhaengro.Api.csproj" />
     <Project Path="src/Ilhaengro.AppHost/Ilhaengro.AppHost.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ilhaengro.Api.Tests/Ilhaengro.Api.Tests.csproj" />
+  </Folder>
 </Solution>

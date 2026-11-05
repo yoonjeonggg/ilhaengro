@@ -48,6 +48,9 @@ public sealed record MissionPlan(
     string Fallback,
     string? Warning);
 
-public sealed record UpdateTaskRequest(string Status);
+public sealed record UpdateTaskRequest(string? Status = null, string? Title = null, string? Priority = null, int? EstimatedMinutes = null);
+public sealed record AddTaskRequest(string Id, string Title, string Reason, string Category, string Priority, int EstimatedMinutes, bool Selected = true);
+public sealed record ReorderTasksRequest(IReadOnlyList<string> TaskIds);
+public sealed record CarryOverRequest(IReadOnlyList<string> TaskIds);
 public sealed record ReplanRequest(string Message);
 public sealed record ReplanResponse(MissionPlan PreviousPlan, MissionPlan UpdatedPlan, IReadOnlyList<string> MovedTasks, IReadOnlyList<string> Warnings);

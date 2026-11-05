@@ -26,6 +26,8 @@ public sealed class InMemoryMissionStore
 
         return session;
     }
+
+    public bool Delete(string id) => sessions.TryRemove(id, out _);
 }
 
 public sealed class MissionSession(string id, DateTimeOffset expiresAt)

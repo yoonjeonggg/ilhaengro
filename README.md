@@ -21,7 +21,7 @@ npm run dev
 
 ## AI 실행 설정
 
-API는 확인된 `GitHub.Copilot.SDK` 1.0.28을 사용합니다. Copilot CLI 인증이 완료된 환경에서 실행해야 실제 Context/Discovery/Plan/Review 에이전트 호출이 동작합니다.
+API는 확인된 `GitHub.Copilot.SDK` 1.0.28과 `Microsoft.Agents.AI` 1.27.0을 사용합니다. Copilot CLI 인증이 완료된 환경에서 실행해야 실제 Context/Discovery/Plan/Review/Recovery 에이전트 호출이 동작합니다.
 
 ```powershell
 $env:COPILOT_MODEL = "gpt-5"
@@ -33,8 +33,20 @@ copilot
 ## 주요 구성
 
 - `src\Ilhaengro.Api`: ASP.NET Core API, 메모리 세션, Copilot SDK 기반 에이전트 오케스트레이션
+- `src\Ilhaengro.Api\Services\CopilotChatClient.cs`: Copilot SDK를 `IChatClient`로 연결하는 Agent Framework 어댑터
+- `src\Ilhaengro.Api\Services\CopilotAgentOrchestrator.cs`: Context, Discovery, Plan, Review, Recovery `ChatClientAgent` 실행
 - `src\Ilhaengro.AppHost`: .NET Aspire로 API와 Vite 웹앱 연결
 - `src\App.tsx`: 자연어 입력, 제안 승인, 계획 실행, 재계획 UI
 - `src\services\api.ts`: API 계약과 명시적 오류 처리
 
 로그인, 영구 데이터베이스, 지도 API, 캘린더 연동은 구현하지 않습니다.
+
+## 테스트
+
+FR-01부터 FR-16까지의 API 계약·결정적 계획 검증·세션 수명주기 수용 테스트는 다음 명령으로 실행합니다.
+
+```powershell
+dotnet test Ilhaengro.slnx
+```
+
+실제 AI 호출이 필요한 테스트는 Copilot CLI 인증과 `COPILOT_MODEL` 설정이 있는 실행 환경에서 별도로 검증해야 합니다.

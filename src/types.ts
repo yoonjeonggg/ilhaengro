@@ -23,6 +23,13 @@ export interface PlannedTask extends SuggestedTask {
   startTime: string;
 }
 
+export interface TaskUpdate {
+  status?: TaskStatus;
+  title?: string;
+  priority?: TaskPriority;
+  estimatedMinutes?: number;
+}
+
 export interface MissionPlan {
   title: string;
   returnDeadline: string;

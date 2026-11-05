@@ -20,6 +20,26 @@ api.MapPost("/sessions", (InMemoryMissionStore store) =>
     return Results.Ok(new CreateSessionResponse(session.Id, session.ExpiresAt));
 });
 
+api.MapGet("/sessions/{sessionId}", (string sessionId, InMemoryMissionStore store) =>
+{
+    try
+    {
+        var session = store.Get(sessionId);
+        return Results.Ok(session);
+    }
+    catch (KeyNotFoundException exception)
+    {
+        return Results.NotFound(new { error = new { code = "SESSION_NOT_FOUND", message = exception.Message } });
+    }
+});
+
+api.MapDelete("/sessions/{sessionId}", (string sessionId, InMemoryMissionStore store) =>
+{
+    return store.Delete(sessionId)
+        ? Results.NoContent()
+        : Results.NotFound(new { error = new { code = "SESSION_NOT_FOUND", message = "세션을 찾지 못했습니다." } });
+});
+
 api.MapPost("/sessions/{sessionId}/discover", async (
     string sessionId,
     DiscoverRequest request,
@@ -149,8 +169,9 @@ api.MapPatch("/sessions/{sessionId}/tasks/{taskId}", (
             return Results.Conflict(new { error = new { code = "PLAN_NOT_FOUND", message = "먼저 계획을 생성해 주세요." } });
         }
 
+        var status = request.Status?.ToLowerInvariant();
         var allowed = new[] { "pending", "completed", "postponed", "cancelled" };
-        if (!allowed.Contains(request.Status, StringComparer.OrdinalIgnoreCase))
+        if (status is not null && !allowed.Contains(status, StringComparer.OrdinalIgnoreCase))
         {
             return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "허용되지 않은 업무 상태입니다." } });
         }
@@ -161,16 +182,138 @@ api.MapPatch("/sessions/{sessionId}/tasks/{taskId}", (
             return Results.NotFound(new { error = new { code = "TASK_NOT_FOUND", message = "업무를 찾지 못했습니다." } });
         }
 
-        if (!IsAllowedTransition(task.Status, request.Status))
+        if (status is not null && !IsAllowedTransition(task.Status, status))
         {
-            return Results.Conflict(new { error = new { code = "INVALID_STATUS_TRANSITION", message = $"현재 상태 {task.Status}에서는 {request.Status}로 변경할 수 없습니다." } });
+            return Results.Conflict(new { error = new { code = "INVALID_STATUS_TRANSITION", message = $"현재 상태 {task.Status}에서는 {status}로 변경할 수 없습니다." } });
+        }
+
+        if (request.Title is not null && string.IsNullOrWhiteSpace(request.Title))
+        {
+            return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "업무 제목을 입력해 주세요." } });
+        }
+
+        if (request.EstimatedMinutes is < 1 or > 480)
+        {
+            return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "예상 시간은 1분에서 480분 사이여야 합니다." } });
+        }
+
+        if (request.Priority is not null && request.Priority is not ("required" or "optional"))
+        {
+            return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "업무 우선순위가 올바르지 않습니다." } });
         }
 
         session.Plan = session.Plan with
         {
-            Tasks = session.Plan.Tasks.Select(item => item.Id == taskId ? item with { Status = request.Status.ToLowerInvariant() } : item).ToArray(),
+            Tasks = session.Plan.Tasks.Select(item => item.Id == taskId ? item with
+            {
+                Status = status ?? item.Status,
+                Title = request.Title ?? item.Title,
+                Priority = request.Priority ?? item.Priority,
+                EstimatedMinutes = request.EstimatedMinutes ?? item.EstimatedMinutes,
+            } : item).ToArray(),
         };
-        return Results.Ok(new { taskId, status = request.Status.ToLowerInvariant() });
+        return Results.Ok(new { taskId, status = status ?? task.Status });
+    }
+    catch (KeyNotFoundException exception)
+    {
+        return Results.NotFound(new { error = new { code = "SESSION_NOT_FOUND", message = exception.Message } });
+    }
+});
+
+api.MapPost("/sessions/{sessionId}/tasks", (
+    string sessionId,
+    AddTaskRequest request,
+    InMemoryMissionStore store) =>
+{
+    try
+    {
+        var session = store.Get(sessionId);
+        if (session.Plan is null || string.IsNullOrWhiteSpace(request.Title) || request.EstimatedMinutes is < 1 or > 480)
+        {
+            return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "계획, 업무 제목, 1~480분의 예상 시간이 필요합니다." } });
+        }
+
+        if (request.Priority is not ("required" or "optional"))
+        {
+            return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "업무 우선순위가 올바르지 않습니다." } });
+        }
+
+        if (session.Plan.Tasks.Any(task => task.Id == request.Id))
+        {
+            return Results.Conflict(new { error = new { code = "DUPLICATE_TASK", message = "이미 존재하는 업무 ID입니다." } });
+        }
+
+        var start = session.Plan.Tasks.LastOrDefault()?.StartTime ?? "09:00";
+        var newTask = new PlannedTask(request.Id, request.Title.Trim(), request.Reason, request.Category, request.Priority, request.EstimatedMinutes, request.Selected, "pending", start);
+        session.Plan = session.Plan with { Tasks = session.Plan.Tasks.Append(newTask).ToArray() };
+        return Results.Ok(session.Plan);
+    }
+    catch (KeyNotFoundException exception)
+    {
+        return Results.NotFound(new { error = new { code = "SESSION_NOT_FOUND", message = exception.Message } });
+    }
+});
+
+api.MapPost("/sessions/{sessionId}/tasks/reorder", (
+    string sessionId,
+    ReorderTasksRequest request,
+    InMemoryMissionStore store) =>
+{
+    try
+    {
+        var session = store.Get(sessionId);
+        if (session.Plan is null || request.TaskIds.Count != session.Plan.Tasks.Count || request.TaskIds.Distinct().Count() != request.TaskIds.Count)
+        {
+            return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "전체 업무를 중복 없이 전달해 주세요." } });
+        }
+
+        var tasks = request.TaskIds.Select(id => session.Plan.Tasks.FirstOrDefault(task => task.Id == id)).ToArray();
+        if (tasks.Any(task => task is null))
+        {
+            return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "존재하지 않는 업무가 포함되었습니다." } });
+        }
+
+        session.Plan = session.Plan with { Tasks = tasks! };
+        return Results.Ok(session.Plan);
+    }
+    catch (KeyNotFoundException exception)
+    {
+        return Results.NotFound(new { error = new { code = "SESSION_NOT_FOUND", message = exception.Message } });
+    }
+});
+
+api.MapPost("/sessions/{sessionId}/carry-over", (
+    string sessionId,
+    CarryOverRequest request,
+    InMemoryMissionStore store) =>
+{
+    try
+    {
+        var session = store.Get(sessionId);
+        var ids = request.TaskIds.Distinct().ToArray();
+        var found = session.Plan?.Tasks.Where(task => ids.Contains(task.Id) && (task.Status is "postponed" or "cancelled")).Select(task => task.Id).ToArray() ?? [];
+        if (found.Length != ids.Length)
+        {
+            return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "보류 또는 취소된 업무만 이월할 수 있습니다." } });
+        }
+
+        var next = store.Create();
+        var carriedTasks = session.Plan!.Tasks
+            .Where(task => found.Contains(task.Id))
+            .Select((task, index) => task with
+            {
+                Status = "pending",
+                StartTime = index == 0 ? "09:00" : task.StartTime,
+            })
+            .ToArray();
+        next.OriginalMessage = session.OriginalMessage;
+        next.Plan = session.Plan with
+        {
+            Title = "이월된 외출 계획",
+            Tasks = carriedTasks,
+            Warning = "이전 계획에서 이월된 업무입니다. 시간과 순서를 다시 확인해 주세요.",
+        };
+        return Results.Ok(new { sessionId = next.Id, taskIds = found, plan = next.Plan });
     }
     catch (KeyNotFoundException exception)
     {
@@ -236,7 +379,12 @@ static bool IsAllowedTransition(string currentStatus, string requestedStatus)
     {
         "pending" => requestedStatus is "completed" or "postponed" or "cancelled",
         "postponed" => requestedStatus is "pending" or "cancelled",
-        "completed" or "cancelled" => false,
+        "completed" => requestedStatus is "pending",
+        "cancelled" => requestedStatus is "pending",
         _ => false,
     };
+}
+
+public partial class Program
+{
 }
