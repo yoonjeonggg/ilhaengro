@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ilhaengro.Api/Ilhaengro.Api.csproj" />
+    <Project Path="src/Ilhaengro.AppHost/Ilhaengro.AppHost.csproj" />
+  </Folder>
+</Solution>
