@@ -67,9 +67,14 @@ function App() {
     if (!replanMessage.trim() || !plan) return;
     setLoading(true); setError("");
     try {
-      const nextPlan = sessionId
-        ? (await replan(sessionId, replanMessage)).updatedPlan
-        : buildLocalPlan(plan.tasks.filter((task) => task.status !== "completed"), plan.supplies, plan.returnDeadline, replanMessage);
+      let nextPlan: MissionPlan;
+      if (sessionId) {
+        nextPlan = (await replan(sessionId, replanMessage)).updatedPlan;
+      } else {
+        const completedTasks = plan.tasks.filter((task) => task.status === "completed" || task.status === "cancelled");
+        const remainingPlan = buildLocalPlan(plan.tasks.filter((task) => task.status !== "completed" && task.status !== "cancelled"), plan.supplies, plan.returnDeadline, replanMessage);
+        nextPlan = { ...remainingPlan, tasks: [...completedTasks, ...remainingPlan.tasks] };
+      }
       setPlan(nextPlan); setReplanMessage(""); setNotice("완료된 업무는 유지하고 남은 업무만 다시 계산했습니다.");
     } catch (requestError) { setError(requestError instanceof ApiError ? requestError.message : "재계획을 생성하지 못했습니다."); }
     finally { setLoading(false); }

@@ -6,6 +6,7 @@ builder.AddServiceDefaults();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<InMemoryMissionStore>();
 builder.Services.AddSingleton<CopilotAgentOrchestrator>();
+builder.Services.AddSingleton<PlanningTools>();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -49,11 +50,55 @@ api.MapPost("/sessions/{sessionId}/discover", async (
     }
 });
 
+api.MapPost("/sessions/{sessionId}/discover/stream", async (
+    string sessionId,
+    DiscoverRequest request,
+    InMemoryMissionStore store,
+    CopilotAgentOrchestrator agents,
+    HttpResponse response,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Message) || request.Message.Length > 4000)
+    {
+        return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "외출 목적을 입력해 주세요." } });
+    }
+
+    response.ContentType = "text/event-stream";
+    response.Headers.CacheControl = "no-cache";
+    async Task Send(AgentStreamEvent item)
+    {
+        await response.WriteAsync($"event: {item.Type}\ndata: {System.Text.Json.JsonSerializer.Serialize(item)}\n\n", cancellationToken);
+        await response.Body.FlushAsync(cancellationToken);
+    }
+
+    try
+    {
+        var session = store.Get(sessionId);
+        await Send(new AgentStreamEvent("agent_started", "ContextAgent", "입력에서 목적과 시간 제약을 분석하고 있습니다."));
+        var discovery = await agents.DiscoverAsync(request.Message, cancellationToken);
+        session.OriginalMessage = request.Message;
+        session.Discovery = discovery;
+        await Send(new AgentStreamEvent("agent_completed", "DiscoveryAgent", "업무와 준비물 제안을 완료했습니다.", discovery));
+        await Send(new AgentStreamEvent("completed", "DiscoveryAgent", "제안 결과를 확인해 주세요.", discovery));
+    }
+    catch (KeyNotFoundException exception)
+    {
+        await Send(new AgentStreamEvent("error", "DiscoveryAgent", exception.Message));
+    }
+    catch (Exception exception) when (exception is InvalidOperationException or TimeoutException)
+    {
+        await Send(new AgentStreamEvent("error", "DiscoveryAgent", "AI 제안을 생성하지 못했습니다."));
+    }
+
+    return Results.Empty;
+});
+
 api.MapPost("/sessions/{sessionId}/plan", async (
     string sessionId,
     PlanRequest request,
     InMemoryMissionStore store,
     CopilotAgentOrchestrator agents,
+    PlanningTools planningTools,
     CancellationToken cancellationToken) =>
 {
     if (request.Tasks is null || request.Tasks.Count == 0)
@@ -76,6 +121,7 @@ api.MapPost("/sessions/{sessionId}/plan", async (
         }
 
         var plan = await agents.PlanAsync(approvedTasks, request.Supplies, request.ReturnDeadline, null, cancellationToken);
+        plan = planningTools.Validate(plan, approvedTasks, request.ReturnDeadline);
         session.Plan = plan;
         return Results.Ok(plan);
     }
@@ -137,6 +183,7 @@ api.MapPost("/sessions/{sessionId}/replan", async (
     ReplanRequest request,
     InMemoryMissionStore store,
     CopilotAgentOrchestrator agents,
+    PlanningTools planningTools,
     CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(request.Message) || request.Message.Length > 2000)
@@ -159,6 +206,7 @@ api.MapPost("/sessions/{sessionId}/replan", async (
             .Select(task => new SuggestedTask(task.Id, task.Title, task.Reason, task.Category, task.Priority, task.EstimatedMinutes, true))
             .ToArray();
         var replanned = await agents.PlanAsync(remaining, previousPlan.Supplies, previousPlan.ReturnDeadline, request.Message, cancellationToken);
+        replanned = planningTools.Validate(replanned, remaining, previousPlan.ReturnDeadline);
         var updated = replanned with { Tasks = completedTasks.Concat(replanned.Tasks).ToArray() };
         session.Plan = updated;
         var movedTasks = remaining.Where(task => !replanned.Tasks.Any(updatedTask => updatedTask.Id == task.Id)).Select(task => task.Id).ToArray();

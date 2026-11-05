@@ -10,10 +10,19 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 65000);
+  const signal = options?.signal ?? controller.signal;
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+      signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: { message?: string; code?: string } } | null;
     throw new ApiError(body?.error?.message ?? "서버와 통신하지 못했습니다. 잠시 후 다시 시도해 주세요.", body?.error?.code);
