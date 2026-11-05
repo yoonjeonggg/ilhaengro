@@ -32,26 +32,35 @@ function App() {
     setError(""); setLoading(true); setNotice("입력에서 목적과 시간 제약을 분석하고 있습니다.");
     try {
       const session = await createSession(); setSessionId(session.sessionId);
-      const result = await discover(session.sessionId, message); setTasks(result.tasks); setSupplies(result.supplies);
+      const result = await discover(session.sessionId, message); setTasks(result.tasks); setSupplies(result.supplies); setView("suggestions");
     } catch (requestError) {
-      setSessionId(null); setNotice("현재 API에 연결할 수 없어 예시 제안을 표시합니다. 승인 전 제안 상태입니다.");
-      if (!(requestError instanceof ApiError)) setError("제안을 불러오지 못했습니다. 다시 시도해 주세요.");
-    } finally { setLoading(false); setView("suggestions"); }
+      setSessionId(null); setNotice("AI 제안을 불러오지 못했습니다. 입력 내용은 유지되며 다시 시도할 수 있습니다.");
+      setError(requestError instanceof ApiError ? requestError.message : "제안을 불러오지 못했습니다. 다시 시도해 주세요.");
+      return;
+    } finally { setLoading(false); }
   }
 
   async function approveAndPlan() {
     if (selectedTasks.length === 0) { setError("계획에 포함할 업무를 하나 이상 선택해 주세요."); return; }
     setError(""); setLoading(true); setNotice("승인한 업무의 순서와 시간을 계산하고 있습니다.");
     try {
-      const result = sessionId ? await createPlan(sessionId, selectedTasks, supplies) : buildLocalPlan(selectedTasks, supplies, deadline);
+      const result = sessionId ? await createPlan(sessionId, selectedTasks, supplies, deadline) : buildLocalPlan(selectedTasks, supplies, deadline);
       setPlan(result); setView("plan");
     } catch (requestError) { setError(requestError instanceof ApiError ? requestError.message : "계획을 생성하지 못했습니다."); }
     finally { setLoading(false); }
   }
 
   async function changeStatus(taskId: string, status: TaskStatus) {
+    const previousPlan = plan;
     setPlan((current) => current ? { ...current, tasks: current.tasks.map((task) => task.id === taskId ? { ...task, status } : task) } : current);
-    if (sessionId) try { await updateTask(sessionId, taskId, status); } catch (requestError) { setError(requestError instanceof ApiError ? requestError.message : "업무 상태를 저장하지 못했습니다."); }
+    if (sessionId) {
+      try {
+        await updateTask(sessionId, taskId, status);
+      } catch (requestError) {
+        setPlan(previousPlan);
+        setError(requestError instanceof ApiError ? requestError.message : "업무 상태를 저장하지 못했습니다.");
+      }
+    }
   }
 
   async function handleReplan() {

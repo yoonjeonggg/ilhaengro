@@ -61,6 +61,11 @@ api.MapPost("/sessions/{sessionId}/plan", async (
         return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "승인한 업무가 없습니다." } });
     }
 
+    if (!TimeOnly.TryParseExact(request.ReturnDeadline, "HH:mm", out _))
+    {
+        return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "귀가 마감 시간은 HH:mm 형식이어야 합니다." } });
+    }
+
     try
     {
         var session = store.Get(sessionId);
@@ -70,7 +75,7 @@ api.MapPost("/sessions/{sessionId}/plan", async (
             return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "승인한 업무가 없습니다." } });
         }
 
-        var plan = await agents.PlanAsync(approvedTasks, request.Supplies, request.ReturnDeadline, cancellationToken);
+        var plan = await agents.PlanAsync(approvedTasks, request.Supplies, request.ReturnDeadline, null, cancellationToken);
         session.Plan = plan;
         return Results.Ok(plan);
     }
@@ -134,6 +139,11 @@ api.MapPost("/sessions/{sessionId}/replan", async (
     CopilotAgentOrchestrator agents,
     CancellationToken cancellationToken) =>
 {
+    if (string.IsNullOrWhiteSpace(request.Message) || request.Message.Length > 2000)
+    {
+        return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "재계획 상황을 입력해 주세요." } });
+    }
+
     try
     {
         var session = store.Get(sessionId);
@@ -143,13 +153,16 @@ api.MapPost("/sessions/{sessionId}/replan", async (
         }
 
         var previousPlan = session.Plan;
+        var completedTasks = previousPlan.Tasks.Where(task => task.Status is "completed" or "cancelled").ToArray();
         var remaining = previousPlan.Tasks
             .Where(task => task.Status is not "completed" and not "cancelled")
             .Select(task => new SuggestedTask(task.Id, task.Title, task.Reason, task.Category, task.Priority, task.EstimatedMinutes, true))
             .ToArray();
-        var updated = await agents.PlanAsync(remaining, previousPlan.Supplies, previousPlan.ReturnDeadline, cancellationToken);
+        var replanned = await agents.PlanAsync(remaining, previousPlan.Supplies, previousPlan.ReturnDeadline, request.Message, cancellationToken);
+        var updated = replanned with { Tasks = completedTasks.Concat(replanned.Tasks).ToArray() };
         session.Plan = updated;
-        return Results.Ok(new ReplanResponse(previousPlan, updated, Array.Empty<string>(), Array.Empty<string>()));
+        var movedTasks = remaining.Where(task => !replanned.Tasks.Any(updatedTask => updatedTask.Id == task.Id)).Select(task => task.Id).ToArray();
+        return Results.Ok(new ReplanResponse(previousPlan, updated, movedTasks, Array.Empty<string>()));
     }
     catch (KeyNotFoundException exception)
     {

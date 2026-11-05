@@ -25,7 +25,7 @@ public sealed class CopilotAgentOrchestrator(IConfiguration configuration, ILogg
         return Deserialize<DiscoveryResponse>(json, "Discovery Agent");
     }
 
-    public async Task<MissionPlan> PlanAsync(IReadOnlyList<SuggestedTask> tasks, IReadOnlyList<SupplyItem> supplies, string deadline, CancellationToken cancellationToken)
+    public async Task<MissionPlan> PlanAsync(IReadOnlyList<SuggestedTask> tasks, IReadOnlyList<SupplyItem> supplies, string deadline, string? situation, CancellationToken cancellationToken)
     {
         var input = JsonSerializer.Serialize(new { tasks, supplies, deadline }, JsonOptions);
         var prompt = """
@@ -34,6 +34,9 @@ public sealed class CopilotAgentOrchestrator(IConfiguration configuration, ILogg
             {"title":"string","returnDeadline":"HH:mm","tasks":[{"id":"string","title":"string","reason":"string","category":"string","priority":"required|optional","estimatedMinutes":15,"selected":true,"status":"pending","startTime":"HH:mm"}],"supplies":[],"fallback":"string","warning":"string or null"}
             Preserve every selected task. Use estimated times only and clearly warn about uncertainty.
             Never claim to know real operating hours or travel routes.
+            If a situation change is provided, adapt the remaining plan to it without inventing facts.
+            Situation change:
+            """ + Environment.NewLine + (situation ?? "(none)") + """
             Approved data:
             """ + Environment.NewLine + input;
 

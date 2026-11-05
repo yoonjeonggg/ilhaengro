@@ -23,6 +23,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const createSession = () => request<{ sessionId: string }>("/api/sessions", { method: "POST", body: "{}" });
 export const discover = (sessionId: string, message: string) => request<{ tasks: SuggestedTask[]; supplies: SupplyItem[] }>(`/api/sessions/${sessionId}/discover`, { method: "POST", body: JSON.stringify({ message }) });
-export const createPlan = (sessionId: string, tasks: SuggestedTask[], supplies: SupplyItem[]) => request<MissionPlan>(`/api/sessions/${sessionId}/plan`, { method: "POST", body: JSON.stringify({ tasks, supplies }) });
+export const createPlan = (sessionId: string, tasks: SuggestedTask[], supplies: SupplyItem[], returnDeadline: string) => request<MissionPlan>(`/api/sessions/${sessionId}/plan`, { method: "POST", body: JSON.stringify({ tasks, supplies, returnDeadline }) });
 export const updateTask = (sessionId: string, taskId: string, status: TaskStatus) => request<{ taskId: string; status: TaskStatus }>(`/api/sessions/${sessionId}/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status }) });
 export const replan = (sessionId: string, message: string) => request<{ previousPlan: MissionPlan; updatedPlan: MissionPlan; movedTasks: string[]; warnings: string[] }>(`/api/sessions/${sessionId}/replan`, { method: "POST", body: JSON.stringify({ message }) });
