@@ -64,7 +64,13 @@ api.MapPost("/sessions/{sessionId}/plan", async (
     try
     {
         var session = store.Get(sessionId);
-        var plan = await agents.PlanAsync(request.Tasks.Where(task => task.Selected).ToArray(), request.Supplies, request.ReturnDeadline, cancellationToken);
+        var approvedTasks = request.Tasks.Where(task => task.Selected).ToArray();
+        if (approvedTasks.Length == 0)
+        {
+            return Results.BadRequest(new { error = new { code = "INVALID_REQUEST", message = "승인한 업무가 없습니다." } });
+        }
+
+        var plan = await agents.PlanAsync(approvedTasks, request.Supplies, request.ReturnDeadline, cancellationToken);
         session.Plan = plan;
         return Results.Ok(plan);
     }
@@ -102,6 +108,11 @@ api.MapPatch("/sessions/{sessionId}/tasks/{taskId}", (
         if (task is null)
         {
             return Results.NotFound(new { error = new { code = "TASK_NOT_FOUND", message = "업무를 찾지 못했습니다." } });
+        }
+
+        if (!IsAllowedTransition(task.Status, request.Status))
+        {
+            return Results.Conflict(new { error = new { code = "INVALID_STATUS_TRANSITION", message = $"현재 상태 {task.Status}에서는 {request.Status}로 변경할 수 없습니다." } });
         }
 
         session.Plan = session.Plan with
@@ -152,3 +163,19 @@ api.MapPost("/sessions/{sessionId}/replan", async (
 
 app.MapDefaultEndpoints();
 app.Run();
+
+static bool IsAllowedTransition(string currentStatus, string requestedStatus)
+{
+    if (string.Equals(currentStatus, requestedStatus, StringComparison.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    return currentStatus.ToLowerInvariant() switch
+    {
+        "pending" => requestedStatus is "completed" or "postponed" or "cancelled",
+        "postponed" => requestedStatus is "pending" or "cancelled",
+        "completed" or "cancelled" => false,
+        _ => false,
+    };
+}
