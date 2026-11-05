@@ -1,5 +1,6 @@
 using Ilhaengro.Api.Models;
 using Ilhaengro.Api.Services;
+using Ilhaengro.Api.Services.Planning;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
@@ -182,7 +183,7 @@ api.MapPatch("/sessions/{sessionId}/tasks/{taskId}", (
             return Results.NotFound(new { error = new { code = "TASK_NOT_FOUND", message = "업무를 찾지 못했습니다." } });
         }
 
-        if (status is not null && !IsAllowedTransition(task.Status, status))
+        if (status is not null && !TaskRules.IsAllowedTransition(task.Status, status))
         {
             return Results.Conflict(new { error = new { code = "INVALID_STATUS_TRANSITION", message = $"현재 상태 {task.Status}에서는 {status}로 변경할 수 없습니다." } });
         }
@@ -367,23 +368,6 @@ api.MapPost("/sessions/{sessionId}/replan", async (
 
 app.MapDefaultEndpoints();
 app.Run();
-
-static bool IsAllowedTransition(string currentStatus, string requestedStatus)
-{
-    if (string.Equals(currentStatus, requestedStatus, StringComparison.OrdinalIgnoreCase))
-    {
-        return true;
-    }
-
-    return currentStatus.ToLowerInvariant() switch
-    {
-        "pending" => requestedStatus is "completed" or "postponed" or "cancelled",
-        "postponed" => requestedStatus is "pending" or "cancelled",
-        "completed" => requestedStatus is "pending",
-        "cancelled" => requestedStatus is "pending",
-        _ => false,
-    };
-}
 
 public partial class Program
 {
