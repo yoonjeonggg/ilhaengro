@@ -2,12 +2,28 @@
 
 목적만 말하면 준비물, 업무 순서, 타임라인과 플랜 B를 제안하는 AI 외출 플래너입니다.
 
+> 🏆 [2026 청도 해커톤](https://hackersground.kr/hackathon/) 출품작
+
+## 해커톤 소개
+
+- **대회:** [2026 청도 해커톤](https://hackersground.kr/hackathon/)
+- **일시:** 2026년 11월 5일 (대회 당일 개발)
+- **주제:** GitHub Copilot과 Azure만으로 개인 생산성을 높이는 웹앱 AI 에이전트 만들기
+
+## 팀
+
+| 역할 | GitHub |
+| --- | --- |
+| 팀장 | [@yoonjeonggg](https://github.com/yoonjeonggg) |
+| 팀원 | [@beyourselv05](https://github.com/beyourselv05) |
+
 ## 로컬 실행
 
 PowerShell에서 .NET과 Aspire CLI가 PATH에 포함되어 있어야 합니다.
 
 ```powershell
-cd C:\dev\ilhaengro
+git clone https://github.com/yoonjeonggg/ilhaengro.git
+cd ilhaengro
 dotnet build Ilhaengro.slnx
 aspire run --project src\Ilhaengro.AppHost\Ilhaengro.AppHost.csproj
 ```
